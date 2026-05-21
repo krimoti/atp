@@ -123,6 +123,21 @@ table.resTbl td{padding:6px 10px;border-bottom:1px solid var(--g100);vertical-al
   .tabPanel{display:block!important;}
   .page{box-shadow:none;border:none;border-radius:0;}
 }
+
+.logoUpload{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--purpleXL);border:2px dashed #d0b4ff;border-radius:8px;margin-bottom:12px;}
+.logoPreview{width:80px;height:48px;border-radius:6px;border:1px solid var(--bdr);background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;}
+.logoPreview img{max-width:100%;max-height:100%;object-fit:contain;}
+.noLogo{font-size:10px;color:var(--g400);text-align:center;padding:4px;}
+.logoMeta{flex:1;}
+.logoMeta label{display:block;font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.logoMeta input{width:100%;border:1px solid var(--bdr);border-radius:4px;padding:5px 8px;font-size:12px;font-family:inherit;}
+.logoUploadBtn{position:relative;overflow:hidden;background:var(--purple);color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;display:inline-block;}
+.logoUploadBtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+.logoRemoveBtn{background:#fce4ec;color:#c62828;border:none;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btnPurple{background:var(--purple);color:#fff;}
+.btnPurple:hover{background:#38009a;}
+.btnOrange{background:#e65100;color:#fff;}
+.btnOrange:hover{background:#bf360c;}
 </style>
 </head>
 <body>
@@ -150,6 +165,25 @@ table.resTbl td{padding:6px 10px;border-bottom:1px solid var(--g100);vertical-al
   <!-- ===== TAB 1: BUILD ===== -->
   <div class="tabPanel active" id="tabBuild">
     <div class="buildForm">
+
+      <!-- Company Logo -->
+      <div class="formCard" id="logoCard">
+        <h3 id="lblLogo">Company Logo</h3>
+        <div class="logoUpload" id="logoUploadArea">
+          <div class="logoPreview" id="logoPreviewBox">
+            <div class="noLogo" id="logoPlaceholderTxt">No logo</div>
+          </div>
+          <div class="logoMeta">
+            <label id="lblCompanyName">Company Name</label>
+            <input type="text" id="companyName" placeholder="ACME Industries Ltd.">
+          </div>
+          <label class="logoUploadBtn" id="logoUploadBtn">
+            Upload Logo
+            <input type="file" id="logoFileInput" accept=".png,.jpg,.jpeg,.svg,.gif">
+          </label>
+          <button class="logoRemoveBtn" id="logoRemoveBtn" style="display:none">Remove</button>
+        </div>
+      </div>
 
       <!-- Doc Info -->
       <div class="formCard">
@@ -222,6 +256,7 @@ var LANG = {
     btnSaveTemplate:"Save Template (JSON)", btnLoadTemplate:"Load Template",
     sectionTitle:"New Section", sectionWarn:"Warning (optional)",
     checkAction:"Action / Check description", checkCrit:"Expected result / Criteria",
+    lblLogo:"Company Logo", lblCompanyName:"Company Name", logoUploadBtn:"Upload Logo", logoRemoveBtn:"Remove",
     btnAddCheck:"+ Add Check", btnAddNote:"+ Note", btnAddTable:"+ Table",
     btnAddImage:"+ Image", btnAddAppendix:"+ Appendix", btnAddRow:"+ Add Row",
     btnDelSection:"Delete Section",
@@ -250,6 +285,7 @@ var LANG = {
     btnSaveTemplate:"\u05e9\u05de\u05d5\u05e8 \u05ea\u05d1\u05e0\u05d9\u05ea (JSON)", btnLoadTemplate:"\u05d8\u05e2\u05df \u05ea\u05d1\u05e0\u05d9\u05ea",
     sectionTitle:"\u05e1\u05e2\u05d9\u05e3 \u05d7\u05d3\u05e9", sectionWarn:"\u05d0\u05d6\u05d4\u05e8\u05d4 (\u05d0\u05d5\u05e4\u05e6\u05d9\u05d5\u05e0\u05dc\u05d9)",
     checkAction:"\u05e4\u05e2\u05d5\u05dc\u05d4 / \u05ea\u05d9\u05d0\u05d5\u05e8 \u05d1\u05d3\u05d9\u05e7\u05d4", checkCrit:"\u05ea\u05d5\u05e6\u05d0\u05d4 \u05e6\u05e4\u05d5\u05d9\u05d4 / \u05e7\u05e8\u05d9\u05d8\u05e8\u05d9\u05d5\u05df",
+    lblLogo:"\u05dc\u05d5\u05d2\u05d5 \u05d7\u05d1\u05e8\u05d4", lblCompanyName:"\u05e9\u05dd \u05d7\u05d1\u05e8\u05d4", logoUploadBtn:"\u05d4\u05e2\u05dc\u05d4 \u05dc\u05d5\u05d2\u05d5", logoRemoveBtn:"\u05d4\u05e1\u05e8",
     btnAddCheck:"+ \u05d4\u05d5\u05e1\u05e3 \u05d1\u05d3\u05d9\u05e7\u05d4", btnAddNote:"+ \u05d4\u05e2\u05e8\u05d4", btnAddTable:"+ \u05d8\u05d1\u05dc\u05d4",
     btnAddImage:"+ \u05ea\u05de\u05d5\u05e0\u05d4", btnAddAppendix:"+ \u05e0\u05e1\u05e4\u05d7", btnAddRow:"+ \u05e9\u05d5\u05e8\u05d4",
     btnDelSection:"\u05de\u05d7\u05e7 \u05e1\u05e2\u05d9\u05e3",
@@ -589,7 +625,7 @@ function generateWorkerHTML() {
     };
   }), null, 2);
 
-  var html = generateWorkerTemplate(procNo, product, rev, wdMs, checksJson);
+  var html = generateWorkerTemplate(procNo, product, rev, wdMs, checksJson, logoData.src, logoData.companyName || procNo);
 
   var blob = new Blob([html], {type:"text/html"});
   var a = document.createElement("a");
@@ -598,7 +634,7 @@ function generateWorkerHTML() {
   a.click();
 }
 
-function generateWorkerTemplate(procNo, product, rev, wdMs, checksJson) {
+function generateWorkerTemplate(procNo, product, rev, wdMs, checksJson, logoSrc, companyName) {
   var parts = [];
   parts.push('<!DOCTYPE html><html lang="en" dir="ltr" id="rootHtml"><head>');
   parts.push('<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">');
@@ -650,7 +686,11 @@ function generateWorkerTemplate(procNo, product, rev, wdMs, checksJson) {
   parts.push('.hBtn{padding:12px;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}.langBtn{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:5px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;}');
   parts.push('</style></head><body>');
   parts.push('<div id="holdOverlay"><div class="holdBox"><h2 id="holdTitle">System on HOLD</h2><p id="holdMsg">No activity detected.</p><div class="hBtnG"><button class="hBtn" id="hResumeBtn" style="background:#27ae60;color:#fff">Resume Work</button><button class="hBtn" id="hBreakBtn" style="background:#f39c12;color:#fff">Back from Break (undo last)</button></div></div></div>');
-  parts.push('<div id="topBar"><div class="topBrand"><div class="topLogo">&#9889;</div><div><div class="topTitle">' + procNo + ' - Rev ' + rev + '</div><div class="topSub">' + product + ' &bull; Worker Tool</div></div></div><div class="topRight"><button class="langBtn" id="langBtn">HE</button><span id="liveClock">00:00:00</span></div></div>');
+  // Logo HTML for worker
+  var logoHtmlW = logoSrc
+    ? '<img src="' + logoSrc + '" style="height:36px;max-width:90px;object-fit:contain;border-radius:4px;" alt="logo">'
+    : '<div style="width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;">&#9889;</div>';
+  parts.push('<div id="topBar"><div class="topBrand"><div class="topLogo" style="width:auto;min-width:36px;padding:0 4px;">' + logoHtmlW + '</div><div><div class="topTitle">' + procNo + ' - Rev ' + rev + '</div><div class="topSub">' + (companyName || product) + ' &bull; Worker Tool</div></div></div><div class="topRight"><button class="langBtn" id="langBtn">HE</button><span id="liveClock">00:00:00</span></div></div>');
   parts.push('<div id="progBar"><span id="pctTxt">0%</span><div class="progTrack"><div id="progFill"></div></div><span id="progressNote">checks completed</span></div>');
   parts.push('<div id="testerBar"><div class="tField"><label>Project:</label><input type="text" id="inpProj" placeholder="Project"></div><div class="tField"><label>S/N:</label><input type="text" id="inpSn" placeholder="Serial No."></div><div class="tField"><label>Tester:</label><input type="text" id="inpTester" placeholder="Your name"></div></div>');
   parts.push('<div class="page"><div id="checksContainer"></div>');
@@ -923,7 +963,9 @@ function toggleLang() {
 
 function applyLangUI() {
   var ids = {
-    tabBtnBuild:"tabBuild", tabBtnDecode:"tabDecode",
+    tabBtnBuild:"tabBuild",
+    lblLogo:"lblLogo", lblCompanyName:"lblCompanyName",
+    logoUploadBtn:"logoUploadBtn", tabBtnDecode:"tabDecode",
     lblDocInfo:"lblDocInfo", lblProcNo:"lblProcNo", lblProduct:"lblProduct",
     lblRev:"lblRev", lblWd:"lblWd", lblSections:"lblSections",
     btnAddSection:"btnAddSection", btnGenerate:"btnGenerate",
@@ -944,6 +986,47 @@ function applyLangUI() {
 // INIT
 // ============================================================
 document.addEventListener("DOMContentLoaded", function() {
+
+  // Logo wiring
+  var logoData = {src: null, companyName: ""};
+
+  document.getElementById("logoFileInput").addEventListener("change", function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(x) {
+      logoData.src = x.result;
+      renderLogoPreview();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  });
+
+  document.getElementById("companyName").addEventListener("input", function() {
+    logoData.companyName = this.value;
+  });
+
+  document.getElementById("logoRemoveBtn").addEventListener("click", function() {
+    logoData.src = null;
+    renderLogoPreview();
+  });
+
+  function renderLogoPreview() {
+    var box  = document.getElementById("logoPreviewBox");
+    var rmBtn = document.getElementById("logoRemoveBtn");
+    var plTxt = document.getElementById("logoPlaceholderTxt");
+    if (logoData.src) {
+      box.innerHTML = "";
+      var img = document.createElement("img");
+      img.src = logoData.src;
+      img.style.cssText = "max-width:100%;max-height:100%;object-fit:contain;";
+      box.appendChild(img);
+      rmBtn.style.display = "inline-block";
+    } else {
+      box.innerHTML = "<div class=\"noLogo\" id=\"logoPlaceholderTxt\">No logo</div>";
+      rmBtn.style.display = "none";
+    }
+  }
 
   // Seed with one empty section
   addSection("Visual Inspection", "Make sure power is OFF.", [
