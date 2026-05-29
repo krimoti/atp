@@ -55,7 +55,7 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
 .bdel:hover{background:#ffe0e0;}
 
 /* PREVIEW AREA */
-.pvwrap{flex:1;background:#5a5e66;overflow-y:auto;padding:28px 20px;display:flex;flex-direction:column;align-items:center;}
+.pvwrap{flex:1;background:#5a5e66!important;overflow-y:auto;padding:24px 0 32px;display:flex;flex-direction:column;align-items:center;min-height:0;min-width:0;width:100%;}
 
 /* A4 */
 .a4{width:210mm;min-height:100mm;background:#fff;padding:14mm 16mm;box-shadow:0 4px 20px rgba(0,0,0,.45);margin-bottom:18px;font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;line-height:1.5;color:#111;direction:ltr;position:relative;}
@@ -179,7 +179,7 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
   #topbar,#tab-project,#tab-kb,#tab-editor{display:none!important;}
   #tab-preview{display:flex!important;flex-direction:column!important;overflow:visible;}
   #prevtb{display:none!important;}
-  .pvwrap{background:none;padding:0;overflow:visible;}
+  .pvwrap{flex:1;background:#5a5e66!important;overflow-y:auto;padding:24px 0 32px;display:flex;flex-direction:column;align-items:center;min-height:0;min-width:0;width:100%;}
   .a4{box-shadow:none;margin:0;page-break-after:always;}
 }
 
@@ -257,7 +257,7 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
   .finished-mode .tc, .finished-mode .tc-hdr { display:none !important; }
   body { background:none !important; overflow:visible !important; height:auto !important; }
   #tab-preview { display:flex !important; flex-direction:column !important; overflow:visible !important; }
-  .pvwrap { background:none !important; padding:0 !important; overflow:visible !important; }
+  .pvwrap{flex:1;background:#5a5e66!important;overflow-y:auto;padding:24px 0 32px;display:flex;flex-direction:column;align-items:center;min-height:0;min-width:0;width:100%;}
   .a4 { box-shadow:none !important; margin:0 !important; page-break-after:always; }
 }
 
@@ -291,20 +291,10 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
   </div>
 </div>
 
-    <button onclick="decodeTime()" style="width:100%;padding:9px;background:#6c5ce7;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Decode Working Time</button>
-    <div id="mgr-result" style="display:none;margin-top:12px;text-align:center;">
-      <div style="font-size:11px;color:#888;margin-bottom:4px;">Net Working Time</div>
-      <div id="mgr-time" style="font-size:28px;font-weight:800;color:#2d3436;font-family:Courier New,monospace;">--:--:--</div>
-      <div id="mgr-details"></div>
-    </div>
-    <hr style="margin:16px 0;border-color:#eee;">
-    <div style="font-size:11px;color:#888;margin-bottom:6px;">Verification Code:</div>
-    <div id="mgr-code" class="vcode-box"><div class="vcode-val">—</div></div>
-  </div>
-</div>
 
 <div id="topbar">
   <div class="logo">ATP<em>pro</em></div>
+  <div style="font-size:9px;color:rgba(255,255,255,.35);line-height:1.3;padding-left:8px;border-left:1px solid rgba(255,255,255,.12);">v2.1.0<br>Build 2026-05-25</div>
   <button class="nbtn on" onclick="ST('project',this)">⚙ Project Setup</button>
   <button class="nbtn" onclick="ST('kb',this)">📚 Knowledge Base</button>
   <button class="nbtn" onclick="ST('editor',this)">✏ Edit Procedure</button>
@@ -372,8 +362,8 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
       <p style="font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.5;">Builds from all sections. Use Editor tab to customize.</p>
     </div>
   </div>
-  <div class="pvwrap" id="pjprev">
-    <div class="a4" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px;">
+  <div class="pvwrap" id="pjprev" style="width:100%;min-width:0;background:#5a5e66;">
+    <div class="a4" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:220px;margin-top:24px;">
       <div style="font-size:58px;font-weight:800;color:#002868;letter-spacing:7px;font-family:'Courier New',monospace;">ATP</div>
       <div style="font-size:12px;color:#888;letter-spacing:2px;margin-top:6px;text-transform:uppercase;">Acceptance Test Procedure</div>
       <div style="font-size:12px;color:#bbb;margin-top:22px;">Fill in project details → click Build</div>
@@ -416,21 +406,18 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
 </div>
 
 <!-- TAB: PREVIEW -->
-<div id="tab-preview" class="tp" style="flex-direction:column;">
-  <div id="prevtb" style="background:#fff;border-bottom:1px solid var(--border);padding:9px 18px;display:flex;align-items:center;gap:9px;flex-shrink:0;">
-    <span style="font-size:13px;font-weight:700;color:var(--navy2);">A4 Preview</span>
-    <button class="bsm" onclick="window.print()">🖨 Print</button>
-    <button class="bsm" onclick="doExportHTML()">💾 Save HTML</button>
-    <button class="bpdf" style="margin-right:auto;" onclick="openSig()">✍ Sign & Export PDF</button>
+<div id="tab-preview" class="tp" style="flex-direction:column;width:100%;min-width:0;">
+
+  <div id="prog-bar-wrap" class="no-print" style="flex-shrink:0;background:var(--navy);color:#fff;padding:8px 14px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:12px;font-weight:600;color:#a8c4f0;">A4 Preview</span>
+    <div style="flex:1;"></div>
+    <button class="bsm" onclick="window.print()" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2);">🖨 Print</button>
+    <button class="bsm" onclick="doExportHTML()" style="background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2);">💾 Save HTML</button>
+    <button class="bpdf" onclick="openSig()">✍ Sign &amp; Export PDF</button>
+    <div style="width:1px;height:24px;background:rgba(255,255,255,.2);margin:0 4px;"></div>
+    <button onclick="saveLiveHTML()" style="padding:6px 13px;background:#27ae60;color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;">💾 Save Worker File</button>
   </div>
-  <div id="prog-bar-wrap" class="no-print">
-    <span id="prog-pct" style="font-size:12px;font-weight:700;">0%</span>
-    <div class="pbar-inner"><div id="prog-fill"></div></div>
-    <span id="live-clock">00:00:00</span>
-    <button id="finish-btn" class="lock-btn" onclick="finishTesting()">🔒 Finish & Lock</button>
-    <button id="save-live-btn" onclick="saveLiveHTML()" title="Save working HTML to folder">💾 Save Working File</button>
-  </div>
-  <div class="pvwrap" id="pvarea">
+  <div class="pvwrap" id="pvarea" style="width:100%;min-width:0;">
     <div style="color:#aaa;text-align:center;padding:55px;"><div style="font-size:48px;">📄</div><div style="margin-top:10px;">Build the document first</div></div>
   </div>
 </div>
@@ -439,45 +426,87 @@ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#e9edf5;color:var
 
 <!-- TAB: MANAGER REVIEW -->
 <div id="tab-review" class="tp" style="flex-direction:column;overflow:hidden;">
-  <div style="background:#fff;border-bottom:1px solid var(--border);padding:14px 24px;flex-shrink:0;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+
+  <!-- TOP BAR: load button + filename -->
+  <div style="background:#fff;border-bottom:1px solid var(--border);padding:10px 16px;flex-shrink:0;display:flex;align-items:center;gap:10px;">
     <span style="font-size:14px;font-weight:700;color:var(--navy2);">&#128203; Manager Review</span>
-    <label style="padding:8px 18px;background:var(--navy2);color:#fff;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
+    <label style="padding:7px 16px;background:var(--navy2);color:#fff;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">
       &#128194; Load Final HTML File
       <input type="file" id="review-file-input" accept=".html" style="display:none;" onchange="loadReviewFile(this)">
     </label>
     <span id="review-filename" style="font-size:12px;color:var(--muted);font-style:italic;"></span>
   </div>
-  <div id="review-results" style="display:none;flex-shrink:0;background:#f4f0ff;border-bottom:3px solid #6c5ce7;padding:20px 28px;direction:ltr;">
-    <div style="display:flex;align-items:flex-start;gap:28px;flex-wrap:wrap;">
-      <div style="text-align:center;min-width:160px;">
-        <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Net Working Time</div>
-        <div id="rv-time" style="font-size:48px;font-weight:800;font-family:'Courier New',monospace;color:#002868;line-height:1;">--:--:--</div>
+
+  <!-- MAIN AREA: split left panel + right iframe -->
+  <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+
+    <!-- LEFT: results panel (fixed width, scrollable) -->
+    <div id="review-left" style="width:320px;flex-shrink:0;background:#f4f0ff;border-left:3px solid #6c5ce7;overflow-y:auto;display:flex;flex-direction:column;">
+
+      <!-- Empty state -->
+      <div id="review-empty" style="padding:40px 20px;text-align:center;color:var(--muted);">
+        <div style="font-size:40px;margin-bottom:12px;">&#128202;</div>
+        <div style="font-size:14px;font-weight:600;">Load a Final HTML file</div>
+        <div style="font-size:12px;margin-top:6px;">Results will appear here</div>
       </div>
-      <table style="border-collapse:collapse;font-size:13px;">
-        <tr><td style="padding:5px 12px;border:1px solid #ddd;font-weight:700;">PASS</td><td id="rv-pass" style="padding:5px 12px;border:1px solid #ddd;color:#0d6b35;font-weight:800;font-size:18px;text-align:center;">&#8212;</td></tr>
-        <tr><td style="padding:5px 12px;border:1px solid #ddd;font-weight:700;">FAIL</td><td id="rv-fail" style="padding:5px 12px;border:1px solid #ddd;color:#9c0505;font-weight:800;font-size:18px;text-align:center;">&#8212;</td></tr>
-        <tr><td style="padding:5px 12px;border:1px solid #ddd;font-weight:700;">N/A</td><td id="rv-na" style="padding:5px 12px;border:1px solid #ddd;color:#555;font-weight:800;font-size:18px;text-align:center;">&#8212;</td></tr>
-        <tr><td style="padding:5px 12px;border:1px solid #ddd;font-weight:700;">Total</td><td id="rv-total" style="padding:5px 12px;border:1px solid #ddd;font-weight:800;font-size:18px;text-align:center;">&#8212;</td></tr>
-      </table>
-      <div style="background:#fff;border-radius:8px;padding:14px 18px;border:1px solid #ddd;min-width:250px;">
-        <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:9px;">Document Info</div>
-        <table style="border-collapse:collapse;font-size:13px;width:100%;">
-          <tr><td style="padding:3px 8px;color:#666;font-weight:600;white-space:nowrap;">P/N</td><td id="rv-pn" style="padding:3px 8px;font-family:'Courier New',monospace;font-weight:700;">&#8212;</td></tr>
-          <tr><td style="padding:3px 8px;color:#666;font-weight:600;white-space:nowrap;">S/N</td><td id="rv-sn" style="padding:3px 8px;font-family:'Courier New',monospace;font-weight:700;">&#8212;</td></tr>
-          <tr><td style="padding:3px 8px;color:#666;font-weight:600;white-space:nowrap;">Tester</td><td id="rv-tester" style="padding:3px 8px;font-weight:700;">&#8212;</td></tr>
-          <tr><td style="padding:3px 8px;color:#666;font-weight:600;white-space:nowrap;">Completed</td><td id="rv-date" style="padding:3px 8px;font-size:12px;">&#8212;</td></tr>
-          <tr><td style="padding:3px 8px;color:#666;font-weight:600;white-space:nowrap;">File</td><td id="rv-file" style="padding:3px 8px;font-size:11px;color:#888;">&#8212;</td></tr>
-        </table>
+
+      <!-- Results (hidden until file loaded) -->
+      <div id="review-results" style="display:none;padding:18px 16px;direction:ltr;">
+
+        <!-- Badge -->
+        <div id="rv-badge" style="display:inline-block;padding:7px 18px;border-radius:20px;font-size:13px;font-weight:800;margin-bottom:16px;"></div>
+
+        <!-- Time -->
+        <div style="text-align:center;margin-bottom:16px;background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+          <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Net Working Time</div>
+          <div id="rv-time" style="font-size:40px;font-weight:800;font-family:'Courier New',monospace;color:#002868;line-height:1;">--:--:--</div>
+        </div>
+
+        <!-- Stats -->
+        <div style="background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:12px;">
+          <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Test Results</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <tr><td style="padding:5px 8px;border:1px solid #eee;font-weight:700;">PASS</td>
+                <td id="rv-pass" style="padding:5px 8px;border:1px solid #eee;color:#0d6b35;font-weight:800;font-size:16px;text-align:center;">&#8212;</td></tr>
+            <tr><td style="padding:5px 8px;border:1px solid #eee;font-weight:700;">FAIL</td>
+                <td id="rv-fail" style="padding:5px 8px;border:1px solid #eee;color:#9c0505;font-weight:800;font-size:16px;text-align:center;">&#8212;</td></tr>
+            <tr><td style="padding:5px 8px;border:1px solid #eee;font-weight:700;">N/A</td>
+                <td id="rv-na" style="padding:5px 8px;border:1px solid #eee;color:#555;font-weight:800;font-size:16px;text-align:center;">&#8212;</td></tr>
+            <tr><td style="padding:5px 8px;border:1px solid #eee;font-weight:700;">Total</td>
+                <td id="rv-total" style="padding:5px 8px;border:1px solid #eee;font-weight:800;font-size:16px;text-align:center;">&#8212;</td></tr>
+          </table>
+        </div>
+
+        <!-- Doc Info -->
+        <div style="background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+          <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Document Info</div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <tr><td style="padding:3px 6px;color:#666;font-weight:600;white-space:nowrap;">P/N</td>
+                <td id="rv-pn" style="padding:3px 6px;font-family:'Courier New',monospace;font-weight:700;">&#8212;</td></tr>
+            <tr><td style="padding:3px 6px;color:#666;font-weight:600;white-space:nowrap;">S/N</td>
+                <td id="rv-sn" style="padding:3px 6px;font-family:'Courier New',monospace;font-weight:700;">&#8212;</td></tr>
+            <tr><td style="padding:3px 6px;color:#666;font-weight:600;white-space:nowrap;">Tester</td>
+                <td id="rv-tester" style="padding:3px 6px;font-weight:700;">&#8212;</td></tr>
+            <tr><td style="padding:3px 6px;color:#666;font-weight:600;white-space:nowrap;">Completed</td>
+                <td id="rv-date" style="padding:3px 6px;font-size:11px;">&#8212;</td></tr>
+            <tr><td style="padding:3px 6px;color:#666;font-weight:600;white-space:nowrap;">File</td>
+                <td id="rv-file" style="padding:3px 6px;font-size:10px;color:#888;word-break:break-all;">&#8212;</td></tr>
+          </table>
+        </div>
+
       </div>
     </div>
-    <div id="rv-badge" style="margin-top:12px;display:inline-block;padding:7px 20px;border-radius:20px;font-size:13px;font-weight:800;"></div>
-  </div>
-  <div style="flex:1;overflow:hidden;background:#525659;display:flex;flex-direction:column;min-height:0;">
-    <div style="padding:6px 16px;background:#3a3a3a;color:#bbb;font-size:11px;flex-shrink:0;">Document Preview (read-only)</div>
-    <iframe id="review-iframe" style="flex:1;border:none;width:100%;height:100%;" src="about:blank"></iframe>
-  </div>
-</div>
 
+    <!-- RIGHT: iframe preview (takes all remaining space) -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#525659;min-width:0;">
+      <div style="padding:6px 14px;background:#3a3a3a;color:#bbb;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;">
+        <span>Document Preview (read-only)</span>
+        <span id="rv-preview-hint" style="font-size:10px;color:#888;">Load a file to preview</span>
+      </div>
+      <iframe id="review-iframe" style="flex:1;border:none;width:100%;min-height:0;" src="about:blank"></iframe>
+    </div>
+
+  </div>
 </div>
 
 <!-- SIGNATURE MODAL -->
@@ -701,7 +730,7 @@ function ST(name, btn) {
   btn.classList.add('on');
   if (name === 'kb')      initKB();
   if (name === 'editor')  renderNav();
-  if (name === 'preview') document.getElementById('pvarea').innerHTML = renderPages(gd());
+  if (name === 'preview') { var _d=gd(); document.getElementById('pvarea').innerHTML='<div style="direction:ltr;display:flex;flex-direction:column;align-items:center;width:100%;">'+renderPages(_d)+'</div>'; }
 }
 
 function toast(msg) {
@@ -1097,8 +1126,9 @@ function renderPages(d) {
 function buildDoc() {
   var d = gd();
   var html = renderPages(d);
-  document.getElementById('pjprev').innerHTML = html;
-  document.getElementById('pvarea').innerHTML = html;
+  var wrap = '<div style="direction:ltr;display:flex;flex-direction:column;align-items:center;width:100%;">' + html + '</div>';
+  document.getElementById('pjprev').innerHTML = wrap;
+  document.getElementById('pvarea').innerHTML = wrap;
 }
 
 // ── KNOWLEDGE BASE ─────────────────────────────────────────────
@@ -1772,6 +1802,10 @@ function loadReviewFile(input) {
         badge.style.background='#fff3cd'; badge.style.color='#856404';
       }
       document.getElementById('review-results').style.display='block';
+      var empty=document.getElementById('review-empty');
+      if(empty) empty.style.display='none';
+      var hint=document.getElementById('rv-preview-hint');
+      if(hint) hint.innerText=file.name;
     }catch(ex){alert('Could not decode verification code.\n'+ex.message);return;}
     var blob=new Blob([html],{type:'text/html'});
     var url=URL.createObjectURL(blob);
@@ -1807,10 +1841,5 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<div id="ver-bar">
-  <span>ATPpro</span>
-  <span>v2.1.0 &nbsp;|&nbsp; Build 2026-05-25 &nbsp;|&nbsp; &copy; Anthropic Claude</span>
-  <span>Acceptance Test Procedure Generator</span>
-</div>
 </body>
 </html>
