@@ -291,9 +291,7 @@ body{font-family:var(--ui-font);background:#e9edf5;color:var(--text);height:100v
 <div id="tab-preview" class="tp" style="flex-direction:column;">
   <div id="ptbar" style="background:#fff;border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
     <span style="font-size:13px;font-weight:700;color:var(--navy-mid);">A4 Preview</span>
-    <button class="bs" onclick="window.print()">Print</button>
-    <button class="bs" onclick="saveTemplate()">Save HTML</button>
-    <button class="bg" style="margin-right:auto;" onclick="openSig()">Sign &amp; PDF</button>
+    <span style="font-size:11px;color:var(--muted);">Use the top bar to Save Template or Sign &amp; PDF</span>
   </div>
   <div class="pw" id="preview-area"><div style="color:#aaa;text-align:center;padding:60px;"><div style="font-size:50px;">&#128196;</div><div style="margin-top:12px;">Build the document first</div></div></div>
 </div>
@@ -1262,7 +1260,7 @@ function buildDoc(d) {
       body += '<tr><td class="nm">8</td><td>Nameplate and Serial Label</td><td>Y</td>' + mkSc('-', '', '') + '</tr></table>';
     } else if (sec.type === 'signatures') {
       // Determine overall result text from current statuses
-      body  = '<p style="font-size:11.5px;margin-bottom:10px;">The unit listed above has been tested per this ATP. Overall result: <strong id="doc-overall-result">See signature block</strong></p>';
+      body  = '<p style="font-size:11.5px;margin-bottom:10px;">The unit listed above has been tested per this ATP. Each approver below records their individual PASS/FAIL/N/A decision.</p>';
       // Build signature rows from approvalChain
       body += '<table class="sigtbl"><tr><th style="width:30px;">Step</th><th>Role</th><th style="width:140px;">Name &amp; ID</th><th>Signature</th><th style="width:80px;">Date</th><th style="width:60px;">Result</th></tr>';
       var chain = d.approvalChain || [{role:'Technician / Tester',required:true},{role:'QA Engineer',required:true}];
@@ -1591,7 +1589,26 @@ function saveTemplate() {
   var wjsParts = [];
 
   wjsParts.push('var _st=' + JSON.stringify(cellState) + ';');
-  wjsParts.push('var _net=0,_locked=false,_cTS={},_lastCell=null,_holdT=null;');
+  wjsParts.push('var _net=0,_locked=false,_cTS={},_lastCell=null,_holdT=null,_saveDirHandle=null;');
+
+  // Save folder picker — uses File System Access API where supported (Chrome/Edge desktop),
+  // gracefully no-ops on unsupported browsers (Safari, Firefox, mobile) and the app
+  // simply keeps using the normal download flow.
+  wjsParts.push([
+    'async function pickSaveFolder(){',
+    '  if(!window.showDirectoryPicker){',
+    '    alert("Your browser does not support choosing a save folder directly.\\n\\nThis feature works in Chrome or Edge on desktop.\\nYou can still use Finish & Lock normally — it will download the file as usual.");',
+    '    return;',
+    '  }',
+    '  try{',
+    '    _saveDirHandle=await window.showDirectoryPicker({mode:"readwrite"});',
+    '    var btn=document.getElementById("wb-folder-btn");',
+    '    if(btn){btn.innerHTML="&#9989; Folder Set: "+_saveDirHandle.name;btn.style.background="#1a8a3c";}',
+    '  }catch(e){',
+    '    // user cancelled the picker — not an error',
+    '  }',
+    '}'
+  ].join('\n'));
 
   // Restore initial state on load
   wjsParts.push([
@@ -1948,14 +1965,31 @@ function saveTemplate() {
     '  allA4.forEach(function(p){docParts+=p.outerHTML;});',
     '  // Build completed HTML',
     '  var full=buildCompletedHTML(docParts,embData,pct,sn,meta,state,entries);',
-    '  var blob=new Blob([full],{type:"text/html;charset=utf-8"});',
+    '  var fname="ATP-' + d.pn.replace(/[^a-zA-Z0-9\-]/g,'_') + '-"+sn+"-COMPLETED.html";',
+    '  saveCompletedFile(full,fname);',
+    '}',
+    '// Save the completed file: use the chosen folder handle if available (no dialog),',
+    '// otherwise fall back to a normal browser download.',
+    'async function saveCompletedFile(content,fname){',
+    '  if(_saveDirHandle){',
+    '    try{',
+    '      var fh=await _saveDirHandle.getFileHandle(fname,{create:true});',
+    '      var w=await fh.createWritable();',
+    '      await w.write(content);',
+    '      await w.close();',
+    '      alert("File saved automatically to your chosen folder:\\n"+fname+"\\n\\nNo further action needed — send the folder location to your manager, or it may already be a shared/synced folder.");',
+    '      return;',
+    '    }catch(e){',
+    '      console.error("Folder save failed, falling back to download:",e);',
+    '    }',
+    '  }',
+    '  var blob=new Blob([content],{type:"text/html;charset=utf-8"});',
     '  var url=URL.createObjectURL(blob);',
     '  var a=document.createElement("a");',
-    '  a.href=url;',
-    '  a.download="ATP-' + d.pn.replace(/[^a-zA-Z0-9\-]/g,'_') + '-"+sn+"-COMPLETED.html";',
+    '  a.href=url;a.download=fname;',
     '  document.body.appendChild(a);a.click();document.body.removeChild(a);',
     '  URL.revokeObjectURL(url);',
-    '  alert("File saved!\\nSend the COMPLETED.html file to your manager.");',
+    '  alert("File saved!\\nSend the COMPLETED.html file to your manager.\\n\\nTip: use \\"Set Save Folder\\" next time to skip this download step entirely.");',
     '}'
   ].join('\n'));
 
@@ -2091,6 +2125,7 @@ function saveTemplate() {
     '<div id="wb-pct" style="font-family:monospace;font-size:13px;white-space:nowrap;">0%</div>' +
     '<input type="text" id="wb-sn" placeholder="S/N" style="padding:6px 10px;border:none;border-radius:5px;font-size:13px;width:100px;" oninput="syncSN()">' +
     '<input type="text" id="wb-tester" placeholder="Tester Name" style="padding:6px 10px;border:none;border-radius:5px;font-size:13px;width:120px;">' +
+    '<button id="wb-folder-btn" onclick="pickSaveFolder()" style="padding:8px 12px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);cursor:pointer;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap;" title="Choose a folder so completed files save automatically with no download dialog">&#128193; Set Save Folder</button>' +
     '<button onclick="window.print()" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);cursor:pointer;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap;">Print / PDF</button>' +
     '<button id="wb-fbtn" onclick="doFinish()" style="padding:9px 18px;background:linear-gradient(135deg,#c0392b,#9c0505);color:#fff;border:none;cursor:pointer;border-radius:6px;font-size:13px;font-weight:700;white-space:nowrap;">Finish &amp; Lock</button>' +
     '</div>';
