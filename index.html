@@ -1251,13 +1251,35 @@ function buildDoc(d) {
       body += '<div class="pgt"><div class="pgf" id="pg-fill"></div></div></div>';
       body += '<table class="atbl"><tr><th style="width:32px;">#</th><th>UUT Test Check List</th><th style="width:140px;">Required</th><th style="width:60px;">Sign</th></tr>';
       body += '<tr><td class="nm">1</td><td>UUT P/N</td><td style="font-family:var(--mono);">' + d.pn + '</td><td></td></tr>';
-      body += '<tr><td class="nm">2</td><td>Visual Test</td><td>PASS</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">3</td><td>Ground Continuity Test</td><td>&lt; 100 mOhm</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">4</td><td>Insulation Resistance Test</td><td>10 MOhm</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">5</td><td>Point to Point Wiring</td><td>PASS</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">6</td><td>Hi-Pot Test</td><td>N/A</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">7</td><td>Under Voltage Test</td><td>Y</td>' + mkSc('-', '', '') + '</tr>';
-      body += '<tr><td class="nm">8</td><td>Nameplate and Serial Label</td><td>Y</td>' + mkSc('-', '', '') + '</tr></table>';
+      // Each row below reflects the aggregate PASS/FAIL of its matching real section
+      // (not an independently-clickable cell), so it can never drift from the actual test results.
+      var apSummary = {};
+      sections.forEach(function(s) {
+        if (s.type === 'checklist' && s.rows) {
+          var hasFail = false, hasPending = false, anyRow = s.rows.length > 0;
+          s.rows.forEach(function(r) {
+            if (r.status === 'FAIL') hasFail = true;
+            if (!r.status || r.status === '-') hasPending = true;
+          });
+          apSummary[s.title] = hasFail ? 'FAIL' : (hasPending ? '-' : (anyRow ? 'PASS' : '-'));
+        }
+      });
+      function apFind(keyword) {
+        var match = Object.keys(apSummary).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
+        return match ? apSummary[match] : '-';
+      }
+      function apRow(no, label, required, status) {
+        return '<tr><td class="nm">' + no + '</td><td>' + label + '</td><td>' + required + '</td>' + mkSc(status, '', '') + '</tr>';
+      }
+      body += apRow(2, 'Visual Test', 'PASS', apFind('Visual'));
+      body += apRow(3, 'Ground Continuity Test', '&lt; 100 mOhm', apFind('Point to Point') !== '-' ? apFind('Point to Point') : '-');
+      body += apRow(4, 'Insulation Resistance Test', '10 MOhm', apFind('Insulation'));
+      body += apRow(5, 'Point to Point Wiring', 'PASS', apFind('Point to Point'));
+      body += apRow(6, 'Hi-Pot Test', 'N/A', 'N/A');
+      body += apRow(7, 'Under Voltage Test', 'Y', apFind('Under Voltage'));
+      body += apRow(8, 'Nameplate and Serial Label', 'Y', apFind('Cleaning'));
+      body += '</table>';
+      body += '<p style="font-size:9.5px;color:var(--muted);margin-top:6px;">Each row reflects the aggregate result of its corresponding section above — it is not independently editable.</p>';
     } else if (sec.type === 'signatures') {
       // Determine overall result text from current statuses
       body  = '<p style="font-size:11.5px;margin-bottom:10px;">The unit listed above has been tested per this ATP. Each approver below records their individual PASS/FAIL/N/A decision.</p>';
@@ -1581,7 +1603,7 @@ function saveTemplate() {
     '.pages-wrap{display:flex;flex-direction:column;align-items:center;background:#5a5e66;padding:30px;}',
     '.hold-panel{display:none;position:fixed;inset:0;background:rgba(0,10,30,0.92);z-index:5000;align-items:center;justify-content:center;}',
     '.hold-box{background:#1a1a2e;border:2px solid #e74c3c;border-radius:16px;padding:40px 50px;text-align:center;color:#fff;}',
-    '@media print{body{background:none;}.pages-wrap{background:none;padding:0;}#wb{display:none;}.a4{box-shadow:none;page-break-after:always;}.tc,.tht{display:none!important;}}'
+    '@media print{body{background:none;}.pages-wrap{background:none;padding:0;}#wb{display:none!important;}.a4{box-shadow:none;page-break-after:always;}.tc,.tht{display:none!important;}}'
   ].join('');
 
   // ---- Worker JavaScript (built as array then joined) ----
@@ -1793,6 +1815,55 @@ function saveTemplate() {
     '}'
   ].join('\n'));
 
+  // Digital signature support — ported from the main app so workers can sign
+  // directly in the Summary and Signatures section of the worker form.
+  wjsParts.push([
+    'var _docSigCtx={},_docSigDrw={};',
+    'function initDocSig(n){',
+    '  var canvases=document.querySelectorAll(\'#sig-canvas-\'+n+\', [id="sig-canvas-\'+n+\'"]\');',
+    '  if(!canvases.length)return;',
+    '  canvases.forEach(function(cv,idx){',
+    '    var key=n+"_"+idx;',
+    '    var ctx=cv.getContext("2d");',
+    '    ctx.strokeStyle="#001845";ctx.lineWidth=1.5;ctx.lineCap="round";ctx.lineJoin="round";',
+    '    _docSigCtx[key]=ctx;_docSigDrw[key]=false;',
+    '    function pos(e){',
+    '      var r=cv.getBoundingClientRect();var sx=cv.width/r.width;var sy=cv.height/r.height;',
+    '      var s=e.touches?e.touches[0]:e;',
+    '      return{x:(s.clientX-r.left)*sx,y:(s.clientY-r.top)*sy};',
+    '    }',
+    '    var wrapper=cv.parentElement;',
+    '    var ph=wrapper?wrapper.querySelector(\'#sig-ph-\'+n+\', [id="sig-ph-\'+n+\'"]\'):null;',
+    '    cv.onmousedown=cv.ontouchstart=function(e){',
+    '      e.preventDefault();_docSigDrw[key]=true;',
+    '      if(ph)ph.style.display="none";',
+    '      var p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);',
+    '    };',
+    '    cv.onmousemove=cv.ontouchmove=function(e){',
+    '      e.preventDefault();if(!_docSigDrw[key])return;',
+    '      var p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();',
+    '    };',
+    '    cv.onmouseup=cv.ontouchend=function(){_docSigDrw[key]=false;};',
+    '    cv.onmouseleave=function(){_docSigDrw[key]=false;};',
+    '    cv._sigKey=key;',
+    '  });',
+    '}',
+    'function clearDocSig(n){',
+    '  var canvases=document.querySelectorAll(\'#sig-canvas-\'+n+\', [id="sig-canvas-\'+n+\'"]\');',
+    '  canvases.forEach(function(cv){',
+    '    var key=cv._sigKey;',
+    '    if(key&&_docSigCtx[key])_docSigCtx[key].clearRect(0,0,cv.width,cv.height);',
+    '    var wrapper=cv.parentElement;',
+    '    var ph=wrapper?wrapper.querySelector(\'#sig-ph-\'+n+\', [id="sig-ph-\'+n+\'"]\'):null;',
+    '    if(ph)ph.style.display="";',
+    '  });',
+    '}',
+    '// Initialize all signature canvases present in the worker document on load',
+    'window.addEventListener("DOMContentLoaded",function(){',
+    '  for(var i=1;i<=6;i++) initDocSig(i);',
+    '});'
+  ].join('\n'));
+
   // saveWIP - FIX: build WIP HTML cleanly without escaping nightmares
   wjsParts.push([
     'function saveWIP(){',
@@ -1809,7 +1880,7 @@ function saveTemplate() {
     '  var allA4=document.querySelectorAll(".a4");',
     '  var docParts="";',
     '  allA4.forEach(function(p){docParts+=p.outerHTML;});',
-    '  var banner=\'<div style="position:sticky;top:0;z-index:100;background:#1a6b35;color:#fff;padding:10px 20px;font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:700;">\'+',
+    '  var banner=\'<div id="wip-banner" style="position:sticky;top:0;z-index:100;background:#1a6b35;color:#fff;padding:10px 20px;font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:700;">\'+',
     '    "Work in Progress - "+pct+"% | S/N: "+sn+" | Tester: "+tester+\'</div>\';',
     '  var wip=\'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ATP WIP - \'+sn+\'</title>\'+',
     '    \'<style>body{font-family:Segoe UI,Arial,sans-serif;background:#525659;padding:0;margin:0;}\'+',
@@ -1834,7 +1905,7 @@ function saveTemplate() {
     '    \'.sigtbl{width:100%;border-collapse:collapse;margin-top:16px;}.sigtbl th,.sigtbl td{border:1px solid #aaa;padding:8px 10px;}\'+',
     '    \'.pgw{margin:10px 0 14px;}.pgl{font-size:10.5px;font-weight:700;color:#002868;margin-bottom:4px;display:flex;justify-content:space-between;}\'+',
     '    \'.pgt{height:10px;background:#dde5f5;border-radius:6px;overflow:hidden;}.pgf{height:100%;background:linear-gradient(90deg,#1a8a3c,#27ae60);border-radius:6px;}\'+',
-    '    \'@media print{body{background:none;}.pages-wrap{background:none;padding:0;}#wb-banner{display:none!important;}.a4{box-shadow:none;page-break-after:always;}}</style>\'+',
+    '    \'@media print{body{background:none;}.pages-wrap{background:none;padding:0;}#wip-banner{display:none!important;}.a4{box-shadow:none;page-break-after:always;}.tc,.tht{display:none!important;}}</style>\'+',
     '    \'</head><body>\'+banner+\'<div class="pages-wrap">\'+docParts+\'</div></body></html>\';',
     '  var blob=new Blob([wip],{type:"text/html;charset=utf-8"});',
     '  var url=URL.createObjectURL(blob);',
@@ -2648,9 +2719,13 @@ function loadWorkerForPDF(inp) {
     // Auto-fill read-only fields
     if (meta.sn)   document.getElementById('sig-sn-from-worker').value = meta.sn;
     if (meta.prep) document.getElementById('sig-tester').value = meta.prep;
-    // Count from cellState for accurate P/F/NA
+    // Detect old-format files (saved before "measured" was tracked per cell) so
+    // the manager knows why a Measured column might be blank in the PDF.
     var cs = data.cellState || {};
     var csVals = Object.values(cs);
+    var anyHasMeasuredKey = csVals.some(function(e){ return e.measured !== undefined; });
+    var anyShouldHaveMeasured = csVals.some(function(e){ return e.spec || e.measured; });
+    var isOldFormat = csVals.length > 0 && !anyHasMeasuredKey;
     var wPass = csVals.filter(function(e){return e.status==='PASS';}).length;
     var wFail = csVals.filter(function(e){return e.status==='FAIL';}).length;
     var wNA   = csVals.filter(function(e){return e.status==='N/A';}).length;
@@ -2687,7 +2762,8 @@ function loadWorkerForPDF(inp) {
           '<div><strong>Net Work Time:</strong> ' + (function(){var s=meta.netTimeSeconds||0,m=Math.floor(s/60),h=Math.floor(m/60);return h>0?h+'h '+(m%60)+'m':m+'m '+(s%60)+'s';})() + '</div>' +
           '<div><strong>Suggested:</strong> <span style="font-weight:700;color:' + (hasFail?'#9c0505':'#0d6b35') + ';">' + (hasFail?'FAIL':'PASS') + '</span></div>' +
         '</div>' +
-        (wPend > 0 ? '<div style="margin-top:8px;background:#fff8e1;border:1px solid #f59e0b;border-radius:4px;padding:6px 10px;font-size:11px;color:#856404;">⚠ ' + wPend + ' test(s) were not completed in this file.</div>' : '');
+        (wPend > 0 ? '<div style="margin-top:8px;background:#fff8e1;border:1px solid #f59e0b;border-radius:4px;padding:6px 10px;font-size:11px;color:#856404;">⚠ ' + wPend + ' test(s) were not completed in this file.</div>' : '') +
+        (isOldFormat ? '<div style="margin-top:8px;background:#fff8e1;border:1px solid #f59e0b;border-radius:4px;padding:6px 10px;font-size:11px;color:#856404;">⚠ This file was saved by an older version of the worker form and does not contain measured values. PASS/FAIL/N/A will still appear correctly in the PDF, but the Measured column will be blank. Re-test and save with the current worker form to include measured values.</div>' : '');
     }
     toast('Worker file loaded — ' + (wPass+wFail+wNA) + ' test results imported');
   };
