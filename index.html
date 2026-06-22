@@ -1298,7 +1298,7 @@ function buildDoc(d) {
         body += '<button onclick="clearDocSig(' + n + ')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.1);color:#888;border:none;cursor:pointer;border-radius:3px;padding:1px 4px;font-size:8px;">✕</button>';
         body += '</div></td>';
         body += '<td style="background:#fffdf0;"><div contenteditable="true" style="min-height:20px;font-size:10px;padding:2px 4px;font-family:monospace;"></div></td>';
-        body += '<td style="text-align:center;"><select style="font-size:10px;border:1px solid #c8d4ec;border-radius:3px;padding:2px;width:100%;">';
+        body += '<td style="text-align:center;"><select class="sig-result-select" data-step="' + n + '" style="font-size:10px;border:1px solid #c8d4ec;border-radius:3px;padding:2px;width:100%;">';
         body += '<option>PASS</option><option>FAIL</option><option>N/A</option><option>—</option></select></td>';
         body += '</tr>';
       });
@@ -2959,22 +2959,39 @@ async function genPDF() {
     el.className = 'sc' + (st==='PASS'?' sp':st==='FAIL'?' sf':st==='N/A'?' sn':'');
     el.style.cursor = 'default'; el.onclick = null;
   });
-  // Inject measured values — works for both worker-file mode (cid-keyed) and live DOM mode
+  // Inject measured values — works for both worker-file mode (cid-keyed) and live DOM mode.
+  // IMPORTANT: html2canvas cannot reliably render text typed into <input> elements at small
+  // font sizes (it garbles glyphs below ~12px). Since this is a read-only signed certificate,
+  // each <input class="mi"> is replaced with an equivalent <div> before rendering.
   con.querySelectorAll('input.mi').forEach(function(inp) {
     var cid = inp.getAttribute('data-cid');
-    if (cid && liveMeasured[cid] !== undefined && liveMeasured[cid] !== '') {
-      inp.value = liveMeasured[cid];
-      // Apply color coding for auto-evaluated values
-      var cs = (_workerDataForPDF && _workerDataForPDF.cellState) ? (_workerDataForPDF.cellState[cid] || {}) : {};
-      var st = liveStatus[cid] || '-';
-      if (liveMeasured[cid] && st !== '-') {
-        inp.style.background = st === 'PASS' ? '#d4f0e0' : st === 'FAIL' ? '#ffe0e0' : '#efefef';
-        inp.style.color = st === 'PASS' ? '#0d6b35' : st === 'FAIL' ? '#9c0505' : '#555';
-      }
+    var val = (cid && liveMeasured[cid] !== undefined) ? liveMeasured[cid] : inp.value;
+    var cs = (_workerDataForPDF && _workerDataForPDF.cellState) ? (_workerDataForPDF.cellState[cid] || {}) : {};
+    var st = (cid && liveStatus[cid] !== undefined) ? liveStatus[cid] : '-';
+
+    var div = document.createElement('div');
+    div.textContent = val || '';
+    var bg = '#fffde6', color = 'inherit';
+    if (val && st !== '-') {
+      bg = st === 'PASS' ? '#d4f0e0' : st === 'FAIL' ? '#ffe0e0' : '#efefef';
+      color = st === 'PASS' ? '#0d6b35' : st === 'FAIL' ? '#9c0505' : '#555';
     }
+    div.style.cssText = 'width:100%;text-align:center;font-family:' + getComputedStyle(inp).fontFamily + ';font-size:11px;font-weight:700;padding:2px 4px;background:' + bg + ';color:' + color + ';box-sizing:border-box;';
+    inp.parentNode.replaceChild(div, inp);
   });
   // Inject S/N
   con.querySelectorAll('.sn-cell').forEach(function(el) { el.textContent = snVal; });
+
+  // Same html2canvas limitation applies to <select> elements — replace with plain text divs.
+  con.querySelectorAll('select.sig-result-select').forEach(function(sel) {
+    var div = document.createElement('div');
+    var val = sel.value || sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text || '—';
+    div.textContent = val;
+    div.style.cssText = 'width:100%;text-align:center;font-size:11px;font-weight:700;padding:2px 4px;border:1px solid #c8d4ec;border-radius:3px;background:' +
+      (val === 'PASS' ? '#d4f0e0' : val === 'FAIL' ? '#ffe0e0' : '#f5f5f5') + ';color:' +
+      (val === 'PASS' ? '#0d6b35' : val === 'FAIL' ? '#9c0505' : '#555') + ';box-sizing:border-box;';
+    sel.parentNode.replaceChild(div, sel);
+  });
 
   // --- Build signature block ---
   var sigResult = document.getElementById('sig-res').value;
