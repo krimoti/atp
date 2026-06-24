@@ -1173,40 +1173,54 @@ function mkHdr(d) {
 }
 
 // Computes the PASS/FAIL/- aggregate for each checklist section, from whichever
-// source currently holds the real results: the live DOM (.sc[data-cid] elements,
-// which exist both in the worker form and in genPDF's freshly-built clone) takes
-// priority since it's always the most current source; `sections` is the fallback
-// for the very first render before any DOM cells exist yet.
+// Computes BOTH:
+//  - per-section aggregate (any FAIL in section -> FAIL; used for "Visual Test",
+//    "Insulation Resistance Test", "Under Voltage Test" rows, which legitimately
+//    summarize their entire section)
+//  - per-row lookup by row number (used for "Nameplate and Serial Label", which
+//    must reflect ONLY row 4.13 "All labels and nameplates correctly placed" —
+//    not the whole Visual Inspection section, and definitely not Cleaning §9.7).
+// Reads from the live DOM (.sc[data-cid][data-sec]) when available — which exists
+// both in the worker form and in genPDF's freshly-built clone — falling back to
+// `sections` only for the very first render before any DOM cells exist.
 function computeApSummary() {
-  var summary = {};
+  var bySection = {};
+  var byRowNo = {}; // "4.13" -> "PASS"/"FAIL"/"N/A"/"-"
+
+  function record(title, rowNo, status) {
+    if (title) {
+      if (!bySection[title]) bySection[title] = { hasFail:false, hasPending:false, anyRow:false };
+      bySection[title].anyRow = true;
+      if (status === 'FAIL') bySection[title].hasFail = true;
+      if (!status || status === '-') bySection[title].hasPending = true;
+    }
+    if (rowNo) byRowNo[rowNo] = status || '-';
+  }
+
   var domCells = document.querySelectorAll('.sc[data-cid][data-sec]');
   if (domCells.length > 0) {
     domCells.forEach(function(el) {
       var title = el.getAttribute('data-sec') || '';
-      if (!title) return;
       var status = el.innerText.trim();
-      if (!summary[title]) summary[title] = { hasFail:false, hasPending:false, anyRow:false };
-      summary[title].anyRow = true;
-      if (status === 'FAIL') summary[title].hasFail = true;
-      if (!status || status === '-') summary[title].hasPending = true;
+      var row = el.closest('tr');
+      var rowNo = row ? (row.querySelector('.nm') || {}).textContent : null;
+      record(title, rowNo ? rowNo.trim() : null, status);
     });
   } else if (typeof sections !== 'undefined') {
     sections.forEach(function(s) {
       if (s.type === 'checklist' && s.rows) {
-        if (!summary[s.title]) summary[s.title] = { hasFail:false, hasPending:false, anyRow: s.rows.length > 0 };
-        s.rows.forEach(function(r) {
-          if (r.status === 'FAIL') summary[s.title].hasFail = true;
-          if (!r.status || r.status === '-') summary[s.title].hasPending = true;
-        });
+        s.rows.forEach(function(r) { record(s.title, r.no, r.status); });
       }
     });
   }
-  var result = {};
-  Object.keys(summary).forEach(function(title) {
-    var s = summary[title];
-    result[title] = s.hasFail ? 'FAIL' : (s.hasPending ? '-' : (s.anyRow ? 'PASS' : '-'));
+
+  var sectionResult = {};
+  Object.keys(bySection).forEach(function(title) {
+    var s = bySection[title];
+    sectionResult[title] = s.hasFail ? 'FAIL' : (s.hasPending ? '-' : (s.anyRow ? 'PASS' : '-'));
   });
-  return result;
+
+  return { bySection: sectionResult, byRowNo: byRowNo };
 }
 
 function buildDoc(d) {
@@ -1289,30 +1303,36 @@ function buildDoc(d) {
       body += '<div class="pgt"><div class="pgf" id="pg-fill"></div></div></div>';
       body += '<table class="atbl"><tr><th style="width:32px;">#</th><th>UUT Test Check List</th><th style="width:140px;">Required</th><th style="width:60px;">Sign</th></tr>';
       body += '<tr><td class="nm">1</td><td>UUT P/N</td><td style="font-family:var(--mono);">' + d.pn + '</td><td></td></tr>';
-      // Each Appendix row is now a REAL clickable cell (own data-cid, data-ap-src linking
-      // it back to the keyword it summarizes). It starts pre-filled with the live aggregate
-      // of its matching section, but the worker can still click to override/confirm it —
-      // and updateAppendixSigns() keeps it auto-synced as the worker checks off the real
-      // sections, both live in the worker form and when genPDF rebuilds the document.
+      // Each Appendix row is a real clickable cell (own data-cid). Rows that summarize
+      // an ENTIRE section (Visual Test, Insulation Resistance, Under Voltage) use
+      // apSummary.bySection — any FAIL anywhere in that section fails the row, which is
+      // correct for those. "Nameplate and Serial Label" must NOT do that: it summarizes
+      // exactly one specific checklist row (§4.13 "All labels and nameplates correctly
+      // placed"), so it uses apSummary.byRowNo to look up that row by number — never
+      // affected by unrelated rows like §9.7 "Insert signed COC..." which merely happens
+      // to be the last row in a different section (Cleaning and Packaging).
       var apSummary = computeApSummary();
-      function apFind(keyword) {
-        var match = Object.keys(apSummary).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
-        return match ? apSummary[match] : '-';
+      function apFindSection(keyword) {
+        var match = Object.keys(apSummary.bySection).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
+        return match ? apSummary.bySection[match] : '-';
       }
-      // Build rows directly so we can attach data-ap-src for live sync as the worker tests
-      function apRow2(no, label, required, status, srcKeyword) {
+      function apFindRow(rowNo) {
+        return apSummary.byRowNo[rowNo] || '-';
+      }
+      // data-ap-src: "sec:<keyword>" syncs from a whole section; "row:<no>" syncs from one specific row.
+      function apRow2(no, label, required, status, src) {
         var cid = 'ap_' + no;
         var cls = 'sc' + (status === 'PASS' ? ' sp' : status === 'FAIL' ? ' sf' : status === 'N/A' ? ' sn' : '');
         return '<tr><td class="nm">' + no + '</td><td>' + label + '</td><td>' + required + '</td>' +
-          '<td class="' + cls + '" data-cid="' + cid + '" data-sec="' + sec.title + '" data-ap-src="' + srcKeyword + '" id="sc_' + cid + '" onclick="cyc(this)">' + status + '</td></tr>';
+          '<td class="' + cls + '" data-cid="' + cid + '" data-sec="' + sec.title + '" data-ap-src="' + src + '" id="sc_' + cid + '" onclick="cyc(this)">' + status + '</td></tr>';
       }
-      body += apRow2(2, 'Visual Test', 'PASS', apFind('Visual'), 'Visual');
+      body += apRow2(2, 'Visual Test', 'PASS', apFindSection('Visual'), 'sec:Visual');
       body += apRow2(3, 'Ground Continuity Test', '&lt; 100 mOhm', '-', '');
-      body += apRow2(4, 'Insulation Resistance Test', '10 MOhm', apFind('Insulation'), 'Insulation');
-      body += apRow2(5, 'Point to Point Wiring', 'PASS', apFind('Point to Point'), 'Point to Point');
+      body += apRow2(4, 'Insulation Resistance Test', '10 MOhm', apFindSection('Insulation'), 'sec:Insulation');
+      body += apRow2(5, 'Point to Point Wiring', 'PASS', apFindSection('Point to Point'), 'sec:Point to Point');
       body += apRow2(6, 'Hi-Pot Test', 'N/A', 'N/A', '');
-      body += apRow2(7, 'Under Voltage Test', 'Y', apFind('Under Voltage'), 'Under Voltage');
-      body += apRow2(8, 'Nameplate and Serial Label', 'Y', apFind('Cleaning'), 'Cleaning');
+      body += apRow2(7, 'Under Voltage Test', 'Y', apFindSection('Under Voltage'), 'sec:Under Voltage');
+      body += apRow2(8, 'Nameplate and Serial Label', 'Y', apFindRow('4.13'), 'row:4.13');
       body += '</table>';
       body += '<p style="font-size:9.5px;color:var(--muted);margin-top:6px;">Rows pre-fill from the matching section\'s result above and update live as you test — click a cell to confirm or override.</p>';
     } else if (sec.type === 'signatures') {
@@ -1397,8 +1417,9 @@ function cyc(el) {
 }
 
 // Whenever a regular test cell changes, refresh any Appendix A row whose data-ap-src
-// keyword matches that cell's section — unless the worker already manually clicked
-// that specific Appendix row (apManualOverride), in which case their choice is kept.
+// points back to it — either "sec:<keyword>" (whole-section aggregate) or
+// "row:<no>" (one specific row, e.g. "row:4.13") — unless the worker already
+// manually clicked that specific Appendix row (apManualOverride).
 function syncAppendixFromSource(changedCid) {
   if (changedCid.indexOf('ap_') === 0) return; // an Appendix cell itself changed; nothing to cascade
   var apCells = document.querySelectorAll('.sc[data-ap-src]');
@@ -1407,10 +1428,16 @@ function syncAppendixFromSource(changedCid) {
   apCells.forEach(function(apEl) {
     var apCid = apEl.getAttribute('data-cid');
     if (apManualOverride[apCid]) return; // worker took manual control of this row
-    var keyword = apEl.getAttribute('data-ap-src');
-    if (!keyword) return; // rows like Hi-Pot/Ground Continuity have no live source
-    var match = Object.keys(summary).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
-    var newStatus = match ? summary[match] : '-';
+    var src = apEl.getAttribute('data-ap-src');
+    if (!src) return; // rows like Hi-Pot/Ground Continuity have no live source
+    var newStatus = '-';
+    if (src.indexOf('sec:') === 0) {
+      var keyword = src.slice(4);
+      var match = Object.keys(summary.bySection).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
+      newStatus = match ? summary.bySection[match] : '-';
+    } else if (src.indexOf('row:') === 0) {
+      newStatus = summary.byRowNo[src.slice(4)] || '-';
+    }
     if (apEl.innerText.trim() === newStatus) return;
     apEl.innerText = newStatus;
     apEl.className = 'sc' + (newStatus==='PASS'?' sp':newStatus==='FAIL'?' sf':newStatus==='N/A'?' sn':'');
@@ -1724,24 +1751,29 @@ function saveTemplate() {
     '}',
     'var _apManualOverride={};',
     'function _computeApSummary(){',
-    '  var summary={};',
+    '  var bySection={},byRowNo={};',
     '  document.querySelectorAll(".sc[data-cid][data-sec]").forEach(function(el){',
     '    var cid=el.getAttribute("data-cid");',
     '    if(cid.indexOf("ap_")===0)return;', // exclude appendix cells themselves from the aggregate
     '    var title=el.getAttribute("data-sec")||"";',
-    '    if(!title)return;',
     '    var status=el.innerText.trim();',
-    '    if(!summary[title])summary[title]={hasFail:false,hasPending:false,anyRow:false};',
-    '    summary[title].anyRow=true;',
-    '    if(status==="FAIL")summary[title].hasFail=true;',
-    '    if(!status||status==="-")summary[title].hasPending=true;',
+    '    var row=el.closest("tr");',
+    '    var nm=row?row.querySelector(".nm"):null;',
+    '    var rowNo=nm?nm.textContent.trim():null;',
+    '    if(title){',
+    '      if(!bySection[title])bySection[title]={hasFail:false,hasPending:false,anyRow:false};',
+    '      bySection[title].anyRow=true;',
+    '      if(status==="FAIL")bySection[title].hasFail=true;',
+    '      if(!status||status==="-")bySection[title].hasPending=true;',
+    '    }',
+    '    if(rowNo)byRowNo[rowNo]=status||"-";',
     '  });',
-    '  var result={};',
-    '  Object.keys(summary).forEach(function(title){',
-    '    var s=summary[title];',
-    '    result[title]=s.hasFail?"FAIL":(s.hasPending?"-":(s.anyRow?"PASS":"-"));',
+    '  var sectionResult={};',
+    '  Object.keys(bySection).forEach(function(title){',
+    '    var s=bySection[title];',
+    '    sectionResult[title]=s.hasFail?"FAIL":(s.hasPending?"-":(s.anyRow?"PASS":"-"));',
     '  });',
-    '  return result;',
+    '  return {bySection:sectionResult, byRowNo:byRowNo};',
     '}',
     'function _syncAppendix(changedCid){',
     '  if(changedCid.indexOf("ap_")===0)return;',
@@ -1751,10 +1783,16 @@ function saveTemplate() {
     '  apCells.forEach(function(apEl){',
     '    var apCid=apEl.getAttribute("data-cid");',
     '    if(_apManualOverride[apCid])return;',
-    '    var keyword=apEl.getAttribute("data-ap-src");',
-    '    if(!keyword)return;',
-    '    var match=Object.keys(summary).find(function(k){return k.toLowerCase().indexOf(keyword.toLowerCase())>=0;});',
-    '    var newStatus=match?summary[match]:"-";',
+    '    var src=apEl.getAttribute("data-ap-src");',
+    '    if(!src)return;',
+    '    var newStatus="-";',
+    '    if(src.indexOf("sec:")===0){',
+    '      var keyword=src.slice(4);',
+    '      var match=Object.keys(summary.bySection).find(function(k){return k.toLowerCase().indexOf(keyword.toLowerCase())>=0;});',
+    '      newStatus=match?summary.bySection[match]:"-";',
+    '    }else if(src.indexOf("row:")===0){',
+    '      newStatus=summary.byRowNo[src.slice(4)]||"-";',
+    '    }',
     '    if(apEl.innerText.trim()===newStatus)return;',
     '    apEl.innerText=newStatus;',
     '    apEl.className="sc"+(newStatus==="PASS"?" sp":newStatus==="FAIL"?" sf":newStatus==="N/A"?" sn":"");',
@@ -3117,56 +3155,13 @@ async function genPDF() {
     el.style.cursor = 'default'; el.onclick = null;
   });
 
-  // Recompute Appendix A's aggregate rows now that real statuses are in `con` —
-  // buildDoc() rendered Appendix A before this injection ran, using whatever was on
-  // screen at the time, so it must be rebuilt from `con`'s own (now-correct) cells.
-  (function rebuildAppendixInClone() {
-    var apSummary = {};
-    con.querySelectorAll('.sc[data-cid][data-sec]').forEach(function(el) {
-      var title = el.getAttribute('data-sec') || '';
-      if (!title) return;
-      var status = el.innerText.trim();
-      if (!apSummary[title]) apSummary[title] = { hasFail:false, hasPending:false, anyRow:false };
-      apSummary[title].anyRow = true;
-      if (status === 'FAIL') apSummary[title].hasFail = true;
-      if (!status || status === '-') apSummary[title].hasPending = true;
-    });
-    var resolved = {};
-    Object.keys(apSummary).forEach(function(title) {
-      var s = apSummary[title];
-      resolved[title] = s.hasFail ? 'FAIL' : (s.hasPending ? '-' : (s.anyRow ? 'PASS' : '-'));
-    });
-    function find(keyword) {
-      var match = Object.keys(resolved).find(function(k) { return k.toLowerCase().indexOf(keyword.toLowerCase()) >= 0; });
-      return match ? resolved[match] : '-';
-    }
-    // Appendix A page is identified by its section header text
-    con.querySelectorAll('.a4').forEach(function(page) {
-      var sech = page.querySelector('.sech');
-      if (!sech || sech.textContent.indexOf('Appendix') === -1) return;
-      var rows = page.querySelectorAll('.atbl tr');
-      var labelToValue = {
-        'Visual Test': find('Visual'),
-        'Ground Continuity Test': find('Point to Point') !== '-' ? find('Point to Point') : '-',
-        'Insulation Resistance Test': find('Insulation'),
-        'Point to Point Wiring': find('Point to Point'),
-        'Hi-Pot Test': 'N/A',
-        'Nameplate and Serial Label': find('Cleaning'),
-        'Under Voltage Test': find('Under Voltage')
-      };
-      rows.forEach(function(row) {
-        var firstCellText = row.querySelector('td:nth-child(2)');
-        if (!firstCellText) return;
-        var label = firstCellText.textContent.trim();
-        if (labelToValue.hasOwnProperty(label)) {
-          var statusCell = row.querySelector('td:last-child');
-          var st = labelToValue[label];
-          statusCell.textContent = st;
-          statusCell.className = 'sc' + (st==='PASS'?' sp':st==='FAIL'?' sf':st==='N/A'?' sn':'');
-        }
-      });
-    });
-  })();
+  // NOTE: Appendix A cells (ap_2, ap_4, ap_7, ap_8, etc.) are real cells with their
+  // own data-cid, exactly like any other test cell — the standard liveStatus
+  // injection above already sets them correctly from the worker's saved cellState
+  // (or from the live DOM when the engineer is previewing). No separate rebuild
+  // step is needed; a previous version duplicated this logic with an incorrect
+  // section-to-label mapping (e.g. it mapped "Nameplate and Serial Label" to the
+  // "Cleaning and Packaging" section instead of row §4.13) and has been removed.
 
   // Inject measured values — works for both worker-file mode (cid-keyed) and live DOM mode.
   // IMPORTANT: html2canvas cannot reliably render text typed into <input> elements at small
