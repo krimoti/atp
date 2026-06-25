@@ -673,6 +673,8 @@ document.getElementById('f_date').value = new Date().toISOString().split('T')[0]
 document.getElementById('sig-date').value = new Date().toISOString().split('T')[0];
 // Init approval chain display
 setTimeout(function() { renderChainRows(); }, 0);
+// Keep initial direction consistent with currentLang='en' default (UI text is English-first)
+document.body.style.direction = currentLang === 'he' ? 'rtl' : 'ltr';
 
 // =============================================
 // HELPERS
@@ -750,7 +752,7 @@ function toggleLang() {
   var L = LABELS[currentLang];
   document.body.style.direction = currentLang === 'he' ? 'rtl' : 'ltr';
   var btn = document.getElementById('lang-btn');
-  if (btn) btn.innerHTML = L['lang-btn'];
+  if (btn) btn.innerHTML = currentLang === 'he' ? L['lang-btn'] : '&#127760; EN';
   var navMap = [
     ['project','project-btn'],['kb','kb-btn'],['editor','editor-btn'],
     ['preview','preview-btn'],['analysis','analysis-btn']
@@ -3104,7 +3106,10 @@ async function genPDF() {
       var cs = wCS[cid];
       liveStatus[cid]   = cs.status   || '-';
       liveMeasured[cid] = cs.measured || '';
-      if (cs.status === 'FAIL') {
+      // Appendix A rows (ap_*) are a derived summary of other sections — they still
+      // need their status injected so the Appendix A page itself renders correctly,
+      // but they must NOT be double-counted as an independent failed item or section.
+      if (cs.status === 'FAIL' && cid.indexOf('ap_') !== 0) {
         failedItems.push({
           sec:  cs.section || cidToSection[cid] || '',
           no:   cs.rowNo   || '',
@@ -3233,9 +3238,16 @@ async function genPDF() {
     failBlock += '</div>';
   }
 
-  // Build per-section result summary from cellState/liveStatus
+  // Build per-section result summary from cellState/liveStatus.
+  // Appendix A rows (ap_*) are EXCLUDED here — they are a derived summary of other
+  // sections (Visual Inspection, Insulation Resistance, etc.), not an independent
+  // test section. Including them would double-count the same results and could
+  // show a confusing FAIL purely from rows with no live source (e.g. "Ground
+  // Continuity Test" / "Point to Point Wiring", which have no matching checklist
+  // in this template and so are correctly left at "-" rather than tested).
   var secResults = {};
   Object.keys(liveStatus).forEach(function(cid) {
+    if (cid.indexOf('ap_') === 0) return;
     var st = liveStatus[cid];
     // cid format: sectionId_rRowIndex — extract section from the data
     var sec = 'Unknown';
@@ -3249,10 +3261,11 @@ async function genPDF() {
     else secResults[sec].pending++;
   });
 
-  // Count totals
-  var totalPass = Object.values(liveStatus).filter(function(s){return s==='PASS';}).length;
-  var totalFail = Object.values(liveStatus).filter(function(s){return s==='FAIL';}).length;
-  var totalNA   = Object.values(liveStatus).filter(function(s){return s==='N/A';}).length;
+  // Count totals — also exclude ap_* here so the top PASS/FAIL/N/A counters match
+  // the per-section table exactly and aren't inflated by the Appendix summary rows.
+  var totalPass = Object.keys(liveStatus).filter(function(cid){return cid.indexOf('ap_')!==0 && liveStatus[cid]==='PASS';}).length;
+  var totalFail = Object.keys(liveStatus).filter(function(cid){return cid.indexOf('ap_')!==0 && liveStatus[cid]==='FAIL';}).length;
+  var totalNA   = Object.keys(liveStatus).filter(function(cid){return cid.indexOf('ap_')!==0 && liveStatus[cid]==='N/A';}).length;
 
   // Build section results table for PDF
   var secTableHTML = '';
