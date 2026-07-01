@@ -197,6 +197,9 @@ body{font-family:var(--ui-font);background:#e9edf5;color:var(--text);height:100v
   <button class="nav-btn yan" onclick="switchTab('analysis',this)">&#128202; Manager Analysis</button>
   <button class="nav-btn" id="lang-btn" onclick="toggleLang()" style="color:#f0e040;border:1px solid rgba(255,255,255,0.2);margin-right:4px;">&#127760; EN</button>
   <div class="tr">
+    <input type="file" id="load-project-inp" accept=".json" style="display:none" onchange="loadProjectFile(this)">
+    <button class="bgh" onclick="document.getElementById('load-project-inp').click()" title="Reopen a previously saved project to keep editing">&#128193; Load Project</button>
+    <button class="bgh" onclick="saveProjectFile()" title="Save everything you've built so far — reopen anytime to keep editing">&#128190; Save Project</button>
     <button class="bgh" onclick="saveTemplate()">&#128190; Save Template</button>
     <button class="bg" onclick="openSig()">&#10000; Sign &amp; PDF</button>
   </div>
@@ -1532,23 +1535,84 @@ function evaluateCriterion(parsed, val) {
   }
 }
 
+var flaggedForReview = {}; // cid -> true, persisted into cellState so the engineer sees it in the manager view too
+
+// Shows/removes a persistent banner under a measured-value cell when autoEval
+// produces a result, so the criterion that was applied is always visible — not
+// hidden behind a hover tooltip a worker might never see. On FAIL specifically,
+// includes a "Flag for Engineer Review" action: this does NOT change the test
+// result (the worker isn't authorized to override a measurement against spec),
+// it only marks that the worker suspects the CRITERION (not their measurement)
+// may be wrong, so the engineer can review it later without re-testing the unit.
+function showAutoFailBanner(scEl, cid, val, spec, rangeInfo, result) {
+  var row = scEl.closest('tr');
+  if (!row) return;
+  var nextRow = row.nextElementSibling;
+  if (nextRow && nextRow.classList.contains('autofail-banner-row')) nextRow.remove();
+
+  if (result !== 'FAIL') return; // PASS needs no banner — only FAIL needs explaining
+
+  var colSpan = row.children.length;
+  var bannerRow = document.createElement('tr');
+  bannerRow.className = 'autofail-banner-row';
+  bannerRow.id = 'autoban_' + cid;
+  var isFlagged = !!flaggedForReview[cid];
+  var td = document.createElement('td');
+  td.colSpan = colSpan;
+  td.style.cssText = 'background:#fff3cd;border:1px solid #f59e0b;padding:6px 10px;font-size:10.5px;color:#856404;';
+  td.innerHTML =
+    '<strong>⚠ Auto-FAIL:</strong> measured <strong>' + val + '</strong> against criterion <strong>"' + spec + '"</strong>' +
+    (rangeInfo ? ' (resolved range: <strong>' + rangeInfo + '</strong>)' : '') +
+    ' — this came from the procedure\'s defined limit, not a manual judgment. ' +
+    '<button onclick="flagForReview(\'' + cid + '\', this)" style="margin-right:8px;padding:2px 8px;font-size:10px;font-weight:700;border-radius:3px;cursor:pointer;border:1px solid ' +
+      (isFlagged ? '#0d6b35;background:#d4f0e0;color:#0d6b35;' : '#f59e0b;background:#fff;color:#856404;') + '">' +
+      (isFlagged ? '✓ Flagged for engineer review' : '🚩 This looks like a wrong limit, not a real fail') +
+    '</button>';
+  bannerRow.appendChild(td);
+  row.parentNode.insertBefore(bannerRow, row.nextSibling);
+}
+
+function flagForReview(cid, btn) {
+  flaggedForReview[cid] = !flaggedForReview[cid];
+  if (btn) {
+    btn.textContent = flaggedForReview[cid] ? '✓ Flagged for engineer review' : '🚩 This looks like a wrong limit, not a real fail';
+    btn.style.borderColor = flaggedForReview[cid] ? '#0d6b35' : '#f59e0b';
+    btn.style.background = flaggedForReview[cid] ? '#d4f0e0' : '#fff';
+    btn.style.color = flaggedForReview[cid] ? '#0d6b35' : '#856404';
+  }
+  toast(flaggedForReview[cid] ? 'Flagged for engineer review' : 'Flag removed');
+}
+
 function autoEval(inp, cid) {
   if (isLocked) return;
   var raw = inp.value.trim();
   if (!raw) {
-    // Reset color when cleared
+    // Reset color and any error indicator when cleared
     inp.style.background = ''; inp.style.color = ''; inp.style.border = '';
+    inp.title = '';
     return;
   }
+  var spec = inp.getAttribute('data-spec') || '';
+  var parsed = spec ? parseCriterion(spec) : null;
   var numMatch = raw.match(/-?[0-9]+(?:\.[0-9]+)?/);
+
+  // The criterion expects a number (it parsed to a range/gt/gte/lt/lte) but the
+  // worker typed something with no number in it at all (e.g. "ok", "good", a typo).
+  // Flag this clearly instead of silently leaving the cell unresolved — a worker
+  // should never have to guess why nothing happened when they entered a value.
+  if (parsed && parsed.type !== 'skip' && !numMatch) {
+    inp.style.background = '#fff3cd';
+    inp.style.color = '#856404';
+    inp.style.border = '1px solid #f59e0b';
+    inp.title = 'This field expects a numeric value (criterion: ' + spec + ') — "' + raw + '" has no number in it. Re-check what you entered.';
+    return;
+  }
   if (!numMatch) return;
   var val = parseFloat(numMatch[0]);
   if (isNaN(val)) return;
 
-  var spec = inp.getAttribute('data-spec') || '';
   if (!spec) return;
-
-  var parsed = parseCriterion(spec);
+  if (!parsed) parsed = parseCriterion(spec);
   var result = evaluateCriterion(parsed, val);
   if (!result) return; // text criterion — skip, let user click manually
 
@@ -1562,7 +1626,7 @@ function autoEval(inp, cid) {
   inp.style.color      = result==='PASS' ? '#0d6b35' : '#9c0505';
   inp.style.border     = '1px solid ' + (result==='PASS' ? '#a0d8b0' : '#ffaaaa');
 
-  // Tooltip with evaluated range
+  // Build a human-readable description of the criterion that was applied
   var info = '';
   if (parsed.type==='range') {
     var fmtN = function(n){ return parseFloat(n.toFixed(4)).toString(); };
@@ -1572,6 +1636,12 @@ function autoEval(inp, cid) {
   else if (parsed.type==='lt')    info = '< '  + parsed.max;
   else if (parsed.type==='lte')   info = '≤ ' + parsed.max;
   inp.title = (info ? info + '  →  ' : '') + result;
+
+  // On an automatic FAIL, show a persistent banner (not just a hover tooltip) so the
+  // worker can see at a glance exactly what value was measured against exactly what
+  // range — and can flag the criterion itself for engineer review if they believe the
+  // RANGE is wrong, without silently overriding the test result themselves.
+  showAutoFailBanner(scEl, cid, val, spec, info, result);
 
   // Record timestamp
   var now = new Date();
@@ -1650,6 +1720,98 @@ function collectCells() {
     state[cid] = { status:el.innerText.trim(), time:tc ? tc.innerText : '--:--:--', section:el.getAttribute('data-sec')||'' };
   });
   return state;
+}
+
+// =============================================
+// SAVE / LOAD PROJECT (Engineer's own editing session)
+// =============================================
+// This solves a real workflow gap: saveTemplate() produces a file FOR THE WORKER,
+// but nothing the engineer can reopen later to keep editing. Closing the browser
+// tab loses every section, KB customization, equipment list, and approval chain
+// the engineer built. saveProjectFile() exports all of that as a single .json the
+// engineer can store anywhere (and reload anytime to resume exactly where they
+// left off, including re-running through saveTemplate() again after changes).
+function saveProjectFile() {
+  var d = getD();
+  var project = {
+    _fileType: 'ATPpro-project',
+    _savedAt: new Date().toISOString(),
+    formFields: {
+      proj: d.proj, pn: d.pn, sn: d.sn, docno: d.docno, rev: d.rev, date: d.date,
+      prep: d.prep, appr: d.appr, company: d.company,
+      holdMin: d.holdMin, gapMin: d.gapMin
+    },
+    equipment: d.equipment,
+    approvalChain: approvalChain,
+    sections: sections,
+    revisions: revisions,
+    kbCustom: KB,       // includes any new categories/items the engineer added
+    kbAdded: kbAdded,
+    companyLogoData: companyLogoData
+  };
+  var blob = new Blob([JSON.stringify(project, null, 2)], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'ATPpro-Project-' + (d.pn || 'untitled').replace(/[^a-zA-Z0-9\-]/g,'_') + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Project saved — reopen this file anytime to keep editing');
+}
+
+function loadProjectFile(inp) {
+  if (!inp.files[0]) return;
+  var r = new FileReader();
+  r.onload = function(e) {
+    var project;
+    try { project = JSON.parse(e.target.result); }
+    catch (err) { alert('This file is not a valid ATPpro project file.'); return; }
+    if (!project || project._fileType !== 'ATPpro-project') {
+      alert('This file is not a valid ATPpro project file.');
+      return;
+    }
+    // Restore form fields
+    var f = project.formFields || {};
+    if (f.proj !== undefined) document.getElementById('f_proj').value = f.proj;
+    if (f.pn !== undefined)   document.getElementById('f_pn').value = f.pn;
+    if (f.sn !== undefined)   document.getElementById('f_sn').value = f.sn;
+    if (f.docno !== undefined) document.getElementById('f_docno').value = f.docno;
+    if (f.rev !== undefined)  document.getElementById('f_rev').value = f.rev;
+    if (f.date !== undefined) document.getElementById('f_date').value = f.date;
+    if (f.prep !== undefined) document.getElementById('f_prep').value = f.prep;
+    if (f.appr !== undefined) document.getElementById('f_appr').value = f.appr;
+    if (f.company !== undefined) document.getElementById('f_company').value = f.company;
+    if (f.holdMin !== undefined) document.getElementById('t_hold').value = f.holdMin;
+    if (f.gapMin !== undefined)  document.getElementById('t_gap').value = f.gapMin;
+    // Restore equipment rows
+    var eqArea = document.getElementById('eq-area');
+    eqArea.innerHTML = '';
+    (project.equipment || []).forEach(function(eq) {
+      var row = document.createElement('div');
+      row.className = 'rowedit';
+      row.innerHTML = '<input placeholder="Equipment" value="' + (eq.name||'').replace(/"/g,'&quot;') + '">' +
+        '<input placeholder="Model/S/N" style="max-width:95px" value="' + (eq.model||'').replace(/"/g,'&quot;') + '">' +
+        '<button class="bd" onclick="this.closest(\'.rowedit\').remove()">X</button>';
+      eqArea.appendChild(row);
+    });
+    // Restore global state objects
+    if (project.approvalChain) { approvalChain = project.approvalChain; renderChainRows(); }
+    if (project.sections) sections = project.sections;
+    if (project.revisions) { revisions = project.revisions; renderRevRows(); }
+    if (project.kbCustom) KB = project.kbCustom;
+    if (project.kbAdded) kbAdded = project.kbAdded;
+    if (project.companyLogoData) {
+      companyLogoData = project.companyLogoData;
+      var img = document.getElementById('logo-prev');
+      var hint = document.getElementById('logo-hint');
+      if (img) { img.src = companyLogoData; img.style.display = 'block'; }
+      if (hint) hint.style.display = 'none';
+    }
+    activeSecId = null;
+    buildAndShow();
+    toast('Project loaded — saved ' + (project._savedAt ? new Date(project._savedAt).toLocaleString() : ''));
+  };
+  r.readAsText(inp.files[0]);
 }
 
 // =============================================
@@ -1801,6 +1963,9 @@ function saveTemplate() {
     '  });',
     '  updP();',
     '}',
+    'var _changeLog=[];', // ISO/IEC 17025 §7.5 audit trail: every status transition, not just the final value —
+                            // so a "corrected" result (e.g. FAIL changed to PASS) remains visible to a reviewer,
+                            // matching the standard's "mistakes crossed out, corrected and initialed" principle.
     'function cyc(el){',
     '  if(_locked)return;',
     '  var states=["-","PASS","FAIL","N/A"];',
@@ -1815,8 +1980,9 @@ function saveTemplate() {
     '  if(cid){',
     '    if(cid.indexOf("ap_")===0)_apManualOverride[cid]=true;',
     '    var tc=document.getElementById("tc_"+cid);',
+    '    var now=new Date();',
+    '    _changeLog.push({cid:cid,from:cur,to:states[next],ts:now.getTime(),section:el.getAttribute("data-sec")||""});',
     '    if(states[next]!=="-"){',
-    '      var now=new Date();',
     '      _cTS[cid]=now.getTime();',
     '      if(tc)tc.innerText=fmtTime(now);',
     '      _lastCell=el;',
@@ -1866,28 +2032,78 @@ function saveTemplate() {
     '    default:return null;',
     '  }',
     '}',
+    'var _flaggedForReview={};',
+    'function showAutoFailBanner(scEl,cid,val,spec,rangeInfo,result){',
+    '  var row=scEl.closest("tr");if(!row)return;',
+    '  var nextRow=row.nextElementSibling;',
+    '  if(nextRow&&nextRow.classList.contains("autofail-banner-row"))nextRow.remove();',
+    '  if(result!=="FAIL")return;',
+    '  var colSpan=row.children.length;',
+    '  var bannerRow=document.createElement("tr");',
+    '  bannerRow.className="autofail-banner-row";',
+    '  bannerRow.id="autoban_"+cid;',
+    '  var isFlagged=!!_flaggedForReview[cid];',
+    '  var td=document.createElement("td");',
+    '  td.colSpan=colSpan;',
+    '  td.style.cssText="background:#fff3cd;border:1px solid #f59e0b;padding:6px 10px;font-size:10.5px;color:#856404;";',
+    '  td.innerHTML="<strong>\\u26a0 Auto-FAIL:</strong> measured <strong>"+val+"</strong> against criterion <strong>\\""+spec+"\\"</strong>"+',
+    '    (rangeInfo?" (resolved range: <strong>"+rangeInfo+"</strong>)":"")+',
+    '    " \\u2014 this came from the procedure\'s defined limit, not a manual judgment. "+',
+    '    "<button onclick=\\"flagForReview(\'"+cid+"\', this)\\" style=\\"margin-right:8px;padding:2px 8px;font-size:10px;font-weight:700;border-radius:3px;cursor:pointer;border:1px solid "+',
+    '    (isFlagged?"#0d6b35;background:#d4f0e0;color:#0d6b35;":"#f59e0b;background:#fff;color:#856404;")+"\\">"+',
+    '    (isFlagged?"\\u2713 Flagged for engineer review":"\\ud83d\\udea9 This looks like a wrong limit, not a real fail")+',
+    '    "</button>";',
+    '  bannerRow.appendChild(td);',
+    '  row.parentNode.insertBefore(bannerRow,row.nextSibling);',
+    '}',
+    'function flagForReview(cid,btn){',
+    '  _flaggedForReview[cid]=!_flaggedForReview[cid];',
+    '  if(btn){',
+    '    btn.textContent=_flaggedForReview[cid]?"\\u2713 Flagged for engineer review":"\\ud83d\\udea9 This looks like a wrong limit, not a real fail";',
+    '    btn.style.borderColor=_flaggedForReview[cid]?"#0d6b35":"#f59e0b";',
+    '    btn.style.background=_flaggedForReview[cid]?"#d4f0e0":"#fff";',
+    '    btn.style.color=_flaggedForReview[cid]?"#0d6b35":"#856404";',
+    '  }',
+    '}',
     'function autoEval(inp,cid){',
     '  if(_locked)return;',
     '  var raw=inp.value.trim();',
-    '  if(!raw){inp.style.background="";inp.style.color="";inp.style.border="";return;}',
+    '  if(!raw){inp.style.background="";inp.style.color="";inp.style.border="";inp.title="";return;}',
+    '  var spec=inp.getAttribute("data-spec")||"";',
+    '  var parsed=spec?parseCriterion(spec):null;',
     '  var nm=raw.match(/-?[0-9]+(?:\\.[0-9]+)?/);',
+    '  if(parsed&&parsed.type!=="skip"&&!nm){',
+    '    inp.style.background="#fff3cd";inp.style.color="#856404";inp.style.border="1px solid #f59e0b";',
+    '    inp.title="This field expects a numeric value (criterion: "+spec+") \\u2014 \\""+raw+"\\" has no number in it. Re-check what you entered.";',
+    '    return;',
+    '  }',
     '  if(!nm)return;',
     '  var val=parseFloat(nm[0]);if(isNaN(val))return;',
-    '  var spec=inp.getAttribute("data-spec")||"";if(!spec)return;',
-    '  var parsed=parseCriterion(spec);',
+    '  if(!spec)return;',
+    '  if(!parsed)parsed=parseCriterion(spec);',
     '  var result=evaluateCriterion(parsed,val);',
     '  if(!result)return;',
     '  var sc=document.getElementById("sc_"+cid);if(!sc)return;',
+    '  var prevStatus=sc.innerText.trim();',
     '  sc.innerText=result;',
     '  sc.className=result==="PASS"?"sc sp":"sc sf";',
     '  inp.style.background=result==="PASS"?"#d4f0e0":"#ffe0e0";',
     '  inp.style.color=result==="PASS"?"#0d6b35":"#9c0505";',
     '  inp.style.border="1px solid "+(result==="PASS"?"#a0d8b0":"#ffaaaa");',
+    '  inp.title="";',
+    '  var rangeInfo="";',
+    '  if(parsed.type==="range"){var fn=function(n){return parseFloat(n.toFixed(4)).toString();};rangeInfo=fn(parsed.min)+" \\u2013 "+fn(parsed.max);}',
+    '  else if(parsed.type==="gt")rangeInfo="> "+parsed.min;',
+    '  else if(parsed.type==="gte")rangeInfo="\\u2265 "+parsed.min;',
+    '  else if(parsed.type==="lt")rangeInfo="< "+parsed.max;',
+    '  else if(parsed.type==="lte")rangeInfo="\\u2264 "+parsed.max;',
+    '  showAutoFailBanner(sc,cid,val,spec,rangeInfo,result);',
     '  var now=new Date();',
     '  _cTS[cid]=now.getTime();',
     '  var tc=document.getElementById("tc_"+cid);',
     '  if(tc)tc.innerText=fmtTime(now);',
     '  _lastCell=sc;',
+    '  _changeLog.push({cid:cid,from:prevStatus,to:result,ts:now.getTime(),section:sc.getAttribute("data-sec")||"",measured:val});',
     '  resetH();calcN();updP();',
     '  _syncAppendix(cid);',
     '}'
@@ -2072,7 +2288,7 @@ function saveTemplate() {
   var apprSafe = d.appr.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
 
   wjsParts.push([
-    'function doFinish(){',
+    'async function doFinish(){',
     '  var allSc=document.querySelectorAll(".sc[data-cid]");',
     '  var incomplete=[];',
     '  allSc.forEach(function(el){',
@@ -2087,7 +2303,9 @@ function saveTemplate() {
     '    return;',
     '  }',
     '  var tester=document.getElementById("wb-tester").value.trim();',
+    '  var testerId=document.getElementById("wb-tester-id").value.trim();',
     '  if(!tester){alert("Please enter tester name");return;}',
+    '  if(!testerId){alert("Please enter Employee ID — required for traceability of who performed this test (ISO/IEC 17025 \\u00a77.8.2.1)");return;}',
     '  if(!confirm("Finish testing?\\n\\nThis will lock all entries and save the completed file.\\nSend the saved file to your manager.\\n\\nContinue?"))return;',
     '  _locked=true;',
     '  clearTimeout(_holdT);',
@@ -2131,7 +2349,6 @@ function saveTemplate() {
     '    }',
     '  });',
     '  entries.sort(function(a,b){return a.ts-b.ts;});',
-    '  var code=btoa(JSON.stringify({net:_net,ts:entries}));',
     '  var sn=document.getElementById("wb-sn").value.trim();',
     '  // Collect cell state with current measured values',
     '  document.querySelectorAll(".mi").forEach(function(inp){inp.setAttribute("value",inp.value);});',
@@ -2156,7 +2373,8 @@ function saveTemplate() {
     '      rowNo:rowNo,',
     '      rowDesc:rowDesc,',
     '      measured:measured,',
-    '      spec:spec',
+    '      spec:spec,',
+    '      flaggedForReview:!!_flaggedForReview[cid]',
     '    };',
     '  });',
     '  var all=document.querySelectorAll(".sc[data-cid]");',
@@ -2171,14 +2389,24 @@ function saveTemplate() {
     '    rev:"' + revSafe + '",',
     '    date:"' + d.date + '",',
     '    prep:tester,',
+    '    prepId:testerId,', // ISO/IEC 17025 §7.8.2.1: unique person identifier, not just a name string
     '    appr:"' + apprSafe + '",',
     '    gapMin:' + gapMin + ',',
     '    holdMin:' + holdMin + ',',
     '    finishedAt:new Date().toISOString(),',
-    '    netTimeSeconds:_net,',
-    '    verificationCode:code',
+    '    netTimeSeconds:_net',
     '  };',
-    '  var embData=JSON.stringify({meta:meta,cellState:state,timestamps:entries});',
+    '  // ISO/IEC 17025 §7.5.4 data integrity: compute a real SHA-256 hash over the full',
+    '  // recorded state (meta + every cell + the complete correction history). Any edit',
+    '  // to this file after locking — including a "quiet" change to a single status —',
+    '  // will change this hash, so tampering is mathematically detectable, not just',
+    '  // visually implied like a Base64 "verification code" would be.',
+    '  var hashPayload=JSON.stringify({meta:meta,cellState:state,timestamps:entries,changeLog:_changeLog});',
+    '  var hashBuffer=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(hashPayload));',
+    '  var hashHex=Array.from(new Uint8Array(hashBuffer)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");',
+    '  meta.integrityHash=hashHex;',
+    '  meta.integrityAlgo="SHA-256";',
+    '  var embData=JSON.stringify({meta:meta,cellState:state,timestamps:entries,changeLog:_changeLog});',
     '  // Bake each signature canvas into a static <img> before capturing the page HTML —',
     '  // canvas pixel content is NOT part of outerHTML, so without this step every',
     '  // signature would be silently lost the moment this file is saved/reopened.',
@@ -2364,6 +2592,7 @@ function saveTemplate() {
     '<div id="wb-pct" style="font-family:monospace;font-size:13px;white-space:nowrap;">0%</div>' +
     '<input type="text" id="wb-sn" placeholder="S/N" style="padding:6px 10px;border:none;border-radius:5px;font-size:13px;width:100px;" oninput="syncSN()">' +
     '<input type="text" id="wb-tester" placeholder="Tester Name" style="padding:6px 10px;border:none;border-radius:5px;font-size:13px;width:120px;">' +
+    '<input type="text" id="wb-tester-id" placeholder="Employee ID" title="Required: unique identifier for the tester (ISO/IEC 17025 §7.8.2.1 — records must identify the specific person responsible, not just a role)" style="padding:6px 10px;border:none;border-radius:5px;font-size:13px;width:100px;">' +
     '<button id="wb-folder-btn" onclick="pickSaveFolder()" style="padding:8px 12px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);cursor:pointer;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap;" title="Choose a folder so completed files save automatically with no download dialog">&#128193; Set Save Folder</button>' +
     '<button onclick="window.print()" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);cursor:pointer;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap;">Print / PDF</button>' +
     '<button id="wb-fbtn" onclick="doFinish()" style="padding:9px 18px;background:linear-gradient(135deg,#c0392b,#9c0505);color:#fff;border:none;cursor:pointer;border-radius:6px;font-size:13px;font-weight:700;white-space:nowrap;">Finish &amp; Lock</button>' +
@@ -3092,13 +3321,17 @@ async function genPDF() {
   var liveMeasured = {};
   var snVal        = '';
   var testerName   = '';
+  var testerIdVal  = '';
+  var integrityHash = '';
   var failedItems  = [];
 
   if (_workerDataForPDF && _workerDataForPDF.meta) {
     // *** Use worker file data — statuses, measured values, row details ***
     var wMeta = _workerDataForPDF.meta;
-    snVal      = wMeta.sn   || d.sn || '';
-    testerName = wMeta.prep || '';
+    snVal       = wMeta.sn   || d.sn || '';
+    testerName  = wMeta.prep || '';
+    testerIdVal = wMeta.prepId || '';
+    integrityHash = wMeta.integrityHash || '';
     var wCS = _workerDataForPDF.cellState || {};
     var cidToSection = {};
     (_workerDataForPDF.timestamps || []).forEach(function(e){ if(e.cid) cidToSection[e.cid]=e.section||''; });
@@ -3113,7 +3346,10 @@ async function genPDF() {
         failedItems.push({
           sec:  cs.section || cidToSection[cid] || '',
           no:   cs.rowNo   || '',
-          desc: cs.rowDesc || ''
+          desc: cs.rowDesc || '',
+          measured: cs.measured || '',
+          spec: cs.spec || '',
+          flagged: !!cs.flaggedForReview
         });
       }
     });
@@ -3228,12 +3464,18 @@ async function genPDF() {
   // Build failed items block
   var failBlock = '';
   if (failedItems.length > 0) {
+    var flaggedCount = failedItems.filter(function(fi){ return fi.flagged; }).length;
     failBlock = '<div style="margin-top:10px;padding:8px 10px;background:#fff5f5;border:1px solid #ffaaaa;border-radius:4px;">' +
-      '<div style="font-size:10px;font-weight:700;color:#9c0505;margin-bottom:5px;">FAILED ITEMS (' + failedItems.length + '):</div>';
+      '<div style="font-size:10px;font-weight:700;color:#9c0505;margin-bottom:5px;">FAILED ITEMS (' + failedItems.length + ')' +
+      (flaggedCount > 0 ? ' — <span style="color:#856404;">' + flaggedCount + ' flagged by tester as possible limit error, review before final disposition</span>' : '') +
+      ':</div>';
     failedItems.forEach(function(fi) {
       failBlock += '<div style="font-size:10px;color:#7a0000;margin-bottom:2px;line-height:1.4;">' +
         '⚠ <strong>' + (fi.sec || 'Unknown section') + (fi.no ? ' §' + fi.no : '') + '</strong>' +
-        (fi.desc && fi.desc !== fi.cid ? ': ' + fi.desc : '') + '</div>';
+        (fi.desc && fi.desc !== fi.cid ? ': ' + fi.desc : '') +
+        (fi.measured && fi.spec ? ' <span style="color:#999;">(measured ' + fi.measured + ' vs "' + fi.spec + '")</span>' : '') +
+        (fi.flagged ? ' <span style="background:#fff3cd;color:#856404;border:1px solid #f59e0b;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:700;">🚩 TESTER FLAGGED — POSSIBLE LIMIT ERROR</span>' : '') +
+        '</div>';
     });
     failBlock += '</div>';
   }
@@ -3326,7 +3568,7 @@ async function genPDF() {
       '<div><span style="color:#5a6a88;">P/N:</span> <strong>' + d.pn + '</strong></div>' +
       '<div><span style="color:#5a6a88;">S/N:</span> <strong style="font-family:monospace;">' + (snVal||'—') + '</strong></div>' +
       '<div><span style="color:#5a6a88;">Date:</span> ' + d.date + '</div>' +
-      '<div><span style="color:#5a6a88;">Tester:</span> <strong>' + (testerName||'—') + '</strong></div>' +
+      '<div><span style="color:#5a6a88;">Tester:</span> <strong>' + (testerName||'—') + (testerIdVal ? ' <span style="font-family:monospace;color:#5a6a88;">(ID: '+testerIdVal+')</span>' : '') + '</strong></div>' +
       '<div><span style="color:#5a6a88;">Project:</span> ' + d.proj + '</div>' +
       '<div><span style="color:#5a6a88;">Doc:</span> ' + d.docno + '</div>' +
     '</div>' +
@@ -3372,6 +3614,7 @@ async function genPDF() {
       '</table>' +
       (sigData ? '<img src="' + sigData + '" style="height:50px;border-bottom:1px solid #aaa;display:block;margin-top:10px;">' : '<div style="margin-top:10px;height:50px;border-bottom:1px solid #aaa;"></div>') +
     '</div>' +
+    (integrityHash ? '<div style="margin-top:8px;padding:6px 10px;background:#f4f8ff;border:1px solid #d0ddf5;border-radius:4px;font-size:9px;color:#5a6a88;font-family:monospace;">Data Integrity (SHA-256): ' + integrityHash + '<br><span style="color:#999;">This hash is computed over the worker\'s complete recorded data at the moment of lock — recompute it from the source file to confirm nothing was altered after testing (ISO/IEC 17025 §7.5.4).</span></div>' : '') +
     '<div style="margin-top:8px;font-size:9px;color:#aaa;font-family:monospace;text-align:right;">Generated: ' + new Date().toISOString() + '</div>';
 
   var pgs = con.querySelectorAll('.a4');
